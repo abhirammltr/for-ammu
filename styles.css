@@ -206,6 +206,7 @@ body.tone-is-warm #music-toggle{
   line-height: 1.4;
   color: var(--tone-ink, #f3ecf5);
   opacity: 0;
+  pointer-events: none;
   will-change: transform, opacity, filter;
   padding: 0 10px;
 }
