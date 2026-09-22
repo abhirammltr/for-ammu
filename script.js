@@ -464,6 +464,21 @@ const CONFIG = {
     ["pointerup", "pointercancel", "pointerleave"].forEach((evt) => {
       pad.addEventListener(evt, cancelScan);
     });
+    // Some WebKit-based mobile browsers (e.g. Chrome/Firefox on iOS) don't dispatch
+    // Pointer Events reliably from a <button>. Touch Events as a parallel path —
+    // startScan/cancelScan are idempotent, so handling both is safe.
+    pad.addEventListener("touchstart", (e) => {
+      e.preventDefault();
+      startScan();
+    }, { passive: false });
+    pad.addEventListener("touchend", cancelScan, { passive: true });
+    pad.addEventListener("touchcancel", cancelScan, { passive: true });
+    // Plain mouse fallback (desktop browsers with no pointer/touch events).
+    pad.addEventListener("mousedown", (e) => {
+      if (e.button !== 0) return;
+      startScan();
+    });
+    window.addEventListener("mouseup", cancelScan);
     // Android/older WebKit can still fire these on long-press even with the CSS guards.
     pad.addEventListener("contextmenu", (e) => e.preventDefault());
     pad.addEventListener("dragstart", (e) => e.preventDefault());
