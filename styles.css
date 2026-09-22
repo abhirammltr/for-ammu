@@ -271,7 +271,17 @@ body.tone-is-warm #music-toggle{
   cursor: pointer;
   touch-action: none;
   -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-user-drag: none;
   transition: transform .25s var(--ease-spring);
+}
+.scanner-pad *{
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+  pointer-events: none;
 }
 .scanner-pad:active{ transform: scale(.97); }
 .scanner-pad:focus-visible{ outline-offset: 6px; }

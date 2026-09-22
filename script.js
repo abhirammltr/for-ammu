@@ -464,6 +464,10 @@ const CONFIG = {
     ["pointerup", "pointercancel", "pointerleave"].forEach((evt) => {
       pad.addEventListener(evt, cancelScan);
     });
+    // Android/older WebKit can still fire these on long-press even with the CSS guards.
+    pad.addEventListener("contextmenu", (e) => e.preventDefault());
+    pad.addEventListener("dragstart", (e) => e.preventDefault());
+    pad.addEventListener("selectstart", (e) => e.preventDefault());
     pad.addEventListener("keydown", (e) => {
       if (e.repeat) return;
       if (e.key === " " || e.key === "Enter") { e.preventDefault(); startScan(); }
