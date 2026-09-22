@@ -270,7 +270,7 @@ body.tone-is-warm #music-toggle{
   border: none;
   background: none;
   cursor: pointer;
-  touch-action: none;
+  touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
   -webkit-touch-callout: none;
   -webkit-user-select: none;

@@ -35,7 +35,7 @@ const CONFIG = {
     },
     ch4: {
       title: "Wait... you don't seem okay.\nLet me check — press your thumb here.",
-      hint: "Hold still...",
+      hint: "Scanning...",
       status: "Test complete. Results are ready.",
       headline: "Oh no... you have a serious deficiency of Vitamin Me [[wink]]",
       reportLabel: "Missing rate",
@@ -314,9 +314,13 @@ const CONFIG = {
   function registerChapter(id, updateFn) {
     const el = document.getElementById(id);
     if (!el) return;
-    const entry = { el, updateFn, active: false, progress: 0 };
+    const entry = { el, updateFn, active: false, progress: 0, smoothProgress: null };
     chapters.push(entry);
   }
+
+  // How much the visible text lags behind the raw scroll position — this is
+  // what gives a reading buffer even if she scrolls quickly. Lower = more lag.
+  const READ_SMOOTHING = reduceMotion ? 1 : 0.07;
 
   /* ---- chapter 1 ---- */
   function updateCh1(progress) {
@@ -363,7 +367,6 @@ const CONFIG = {
   let scanState = "idle"; // idle | scanning | complete
   let scanStartTime = 0;
   let scanRAF = null;
-  let scanHintTimer = null;
 
   function setScanRing(t) {
     document.getElementById("meter-number").textContent = Math.round(t * 100) + "%";
@@ -390,8 +393,7 @@ const CONFIG = {
     scanState = "scanning";
     scanStartTime = performance.now();
     document.getElementById("scanner-pad").classList.add("scanning");
-    document.getElementById("scanner-hint").classList.remove("show");
-    if (scanHintTimer) clearTimeout(scanHintTimer);
+    document.getElementById("scanner-hint").classList.add("show");
     if (scanRAF) cancelAnimationFrame(scanRAF);
     scanRAF = requestAnimationFrame(scanTick);
 
@@ -400,24 +402,6 @@ const CONFIG = {
     titleEl.style.opacity = "0";
     titleEl.style.transform = "translateY(-10px)";
     titleEl.style.filter = reduceMotion ? "none" : "blur(4px)";
-  }
-
-  function cancelScan() {
-    if (scanState !== "scanning") return;
-    scanState = "idle";
-    if (scanRAF) cancelAnimationFrame(scanRAF);
-    setScanRing(0);
-    document.getElementById("scanner-pad").classList.remove("scanning");
-    const hint = document.getElementById("scanner-hint");
-    hint.classList.add("show");
-    if (scanHintTimer) clearTimeout(scanHintTimer);
-    scanHintTimer = setTimeout(() => hint.classList.remove("show"), 1800);
-
-    const titleEl = document.getElementById("c4-title");
-    titleEl.style.opacity = "";
-    titleEl.style.transform = "";
-    titleEl.style.filter = "";
-    titleEl.style.transition = "";
   }
 
   function completeScan() {
@@ -456,40 +440,10 @@ const CONFIG = {
 
   function setupScanner() {
     const pad = document.getElementById("scanner-pad");
-    pad.addEventListener("pointerdown", (e) => {
-      e.preventDefault();
-      try { pad.setPointerCapture(e.pointerId); } catch (err) { /* noop */ }
-      startScan();
-    });
-    ["pointerup", "pointercancel", "pointerleave"].forEach((evt) => {
-      pad.addEventListener(evt, cancelScan);
-    });
-    // Some WebKit-based mobile browsers (e.g. Chrome/Firefox on iOS) don't dispatch
-    // Pointer Events reliably from a <button>. Touch Events as a parallel path —
-    // startScan/cancelScan are idempotent, so handling both is safe.
-    pad.addEventListener("touchstart", (e) => {
-      e.preventDefault();
-      startScan();
-    }, { passive: false });
-    pad.addEventListener("touchend", cancelScan, { passive: true });
-    pad.addEventListener("touchcancel", cancelScan, { passive: true });
-    // Plain mouse fallback (desktop browsers with no pointer/touch events).
-    pad.addEventListener("mousedown", (e) => {
-      if (e.button !== 0) return;
-      startScan();
-    });
-    window.addEventListener("mouseup", cancelScan);
-    // Android/older WebKit can still fire these on long-press even with the CSS guards.
-    pad.addEventListener("contextmenu", (e) => e.preventDefault());
-    pad.addEventListener("dragstart", (e) => e.preventDefault());
-    pad.addEventListener("selectstart", (e) => e.preventDefault());
-    pad.addEventListener("keydown", (e) => {
-      if (e.repeat) return;
-      if (e.key === " " || e.key === "Enter") { e.preventDefault(); startScan(); }
-    });
-    pad.addEventListener("keyup", (e) => {
-      if (e.key === " " || e.key === "Enter") cancelScan();
-    });
+    // A plain tap/click — simplest, most reliable interaction across every
+    // browser and input type. Native <button> semantics give us keyboard
+    // (Enter/Space) and screen-reader activation for free.
+    pad.addEventListener("click", () => startScan());
   }
 
   function updateCh4(progress) {
@@ -602,7 +556,9 @@ const CONFIG = {
   const io = new IntersectionObserver((entries) => {
     entries.forEach((entry) => {
       const match = chapters.find((c) => c.el === entry.target);
-      if (match) match.active = entry.isIntersecting;
+      if (!match) return;
+      match.active = entry.isIntersecting;
+      if (!match.active) match.smoothProgress = null; // re-entering later should snap, not crawl back
     });
   }, { rootMargin: "20% 0px 20% 0px", threshold: 0 });
 
@@ -622,12 +578,12 @@ const CONFIG = {
     targets.forEach((t) => obs.observe(t));
   }
 
-  /* ---------------- main scroll loop ---------------- */
-  let ticking = false;
+  /* ---------------- main loop ----------------
+     Runs continuously (not just on scroll) because the text-reveal lag needs
+     to keep catching up even after she's stopped scrolling. */
   let lastChapterLabel = "";
 
   function frame() {
-    ticking = false;
     const doc = document.documentElement;
     const scrollable = doc.scrollHeight - window.innerHeight;
     const globalProgress = scrollable > 0 ? clamp(window.scrollY / scrollable, 0, 1) : 0;
@@ -637,7 +593,9 @@ const CONFIG = {
 
     chapters.forEach((c) => {
       if (!c.active) return;
-      const p = computeLocalProgress(c.el);
+      const raw = computeLocalProgress(c.el);
+      c.smoothProgress = c.smoothProgress === null ? raw : lerp(c.smoothProgress, raw, READ_SMOOTHING);
+      const p = Math.abs(c.smoothProgress - raw) < 0.0008 ? raw : c.smoothProgress;
       c.updateFn(p);
       if (p > 0.05 && p < 0.95) {
         const label = "Chapter " + c.el.dataset.chapter;
@@ -647,13 +605,11 @@ const CONFIG = {
         }
       }
     });
+
+    requestAnimationFrame(frame);
   }
 
   function onScroll() {
-    if (!ticking) {
-      ticking = true;
-      requestAnimationFrame(frame);
-    }
     armIdleHint();
   }
 
